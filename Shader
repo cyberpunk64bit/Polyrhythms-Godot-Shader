@@ -1,0 +1,71 @@
+shader_type canvas_item;
+
+//uniform float _TimeCode : hint_range(0, 1);
+//uniform float _OuterRingFreq=1.0;//: hint_range(0, 1);
+//uniform float _InnerRingFreq=1.0;// : hint_range(0, 1);
+uniform float _OuterBPM=1.0;//: hint_range(0, 1);
+uniform float _InnerBPM=1.0;// : hint_range(0, 1);
+uniform int _RingCount : hint_range(0, 100);
+uniform float _VibrantFreqs : hint_range(0, 10000);
+uniform float _Vibrant : hint_range(0, 1);
+uniform float _Decay : hint_range(0, 10);
+uniform vec3 _Offset;
+uniform vec3 _Amp;
+uniform vec3 _Freq;
+uniform vec3 _Phase;
+
+const float PI2 = 6.28318530718;
+
+varying float _OuterRingFreq;
+varying float _InnerRingFreq;
+varying float _VibrantFreq;
+
+vec3 cosineGradient(float v, vec3 offset, vec3 amp, vec3 freq, vec3 phase) {
+    return offset + amp * cos(PI2 * (freq * v + phase));
+}
+
+float signedCircularDistance(float a, float b) {
+    a = fract(a);
+    b = fract(b);
+    if (b < a) b++;
+    return b - a;
+}
+
+vec3 calcColor (vec2 uv) {
+    uv -= 0.5;
+    float angle = atan(uv.x, uv.y) / PI2;
+    float distance = length(uv) * 2.0;
+    float steppedDistance = floor(distance * float(_RingCount)) / float(_RingCount);
+    float t = mix(_OuterRingFreq, _InnerRingFreq, steppedDistance) * TIME;
+    float f = floor(float(_RingCount) * 8.0 * steppedDistance + 4.0);
+    t = signedCircularDistance(t, angle);
+    return cosineGradient(steppedDistance, _Offset, _Amp, _Freq, _Phase) * 
+        max(0.01, pow(t, 4.0 + 4.0 * (steppedDistance + 1.0) * _Decay)) *
+        step(distance, 1.0) *
+        step(0.2, fract(distance * float(_RingCount))) *
+        (4.0 - _Vibrant * fract(TIME * _VibrantFreq) * 3.0);
+}
+
+void fragment() {
+	_OuterRingFreq=_OuterBPM/60.0;
+	_InnerRingFreq=_InnerBPM/60.0;
+	_VibrantFreq=_VibrantFreqs/60.0;
+	vec2 uv=UV;
+    vec2 dd = vec2(dFdx(uv.x), dFdy(uv.y));
+    vec4 col = vec4(0.0);
+    col.rgb = (
+        calcColor(uv) + (
+            calcColor(uv + vec2( dd.x, 0)) +
+            calcColor(uv + vec2(-dd.x, 0)) +
+            calcColor(uv + vec2(0,  dd.y)) +
+            calcColor(uv + vec2(0, -dd.y))
+        ) * 0.5 + (
+            calcColor(uv + dd * 0.707) +
+            calcColor(uv - dd * 0.707) +
+            calcColor(uv + vec2(dd.x, -dd.y) * 0.707) +
+            calcColor(uv + vec2(-dd.x, dd.y) * 0.707)
+        ) * 0.25
+    ) * 0.333333;
+    COLOR = col;
+	COLOR.a=1.0-(col.r+col.g+col.b)*0.33333;
+}
